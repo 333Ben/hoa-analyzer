@@ -1,166 +1,207 @@
-# HOA Analyzer - Analyseur de PV de Copropriété
+# 🏢 HOA Analyzer
 
-Application Next.js utilisant l'API Claude pour extraire automatiquement les données importantes des procès-verbaux de copropriété.
+Analysez automatiquement vos procès-verbaux de copropriété français et extrayez les informations clés grâce à l'intelligence artificielle Claude d'Anthropic.
 
-## 🎯 Objectif
+## 📊 Statut du Projet
 
-Extraire et structurer les informations clés des PV de copropriété :
-- Budget annuel (montants, résultats de vote)
-- Gros travaux (toiture, ravalement, ascenseur, canalisation)
-- Petits travaux d'embellissement (peintures, électricité, hall, porte cochère)
-- Litiges et procédures juridiques
+### ✅ **Fonctionnalités Implémentées**
+- ✅ **Interface Next.js** : Design moderne avec Tailwind CSS
+- ✅ **Upload PDF** : Glisser-déposer fonctionnel
+- ✅ **API Claude intégrée** : SDK Anthropic configuré
+- ✅ **Variables d'environnement** : Configuration .env.local
+- ✅ **Gestion d'erreurs** : Messages détaillés et debug
+- ✅ **Extraction pdftotext** : Outil installé (poppler/pdftotext)
 
-## 🛠 Technologies
+### 🔧 **Problème Actuel à Résoudre**
+**📄 Extraction PDF** : Le système détecte seulement 16 caractères au lieu du contenu complet
+- **Diagnostic** : PDF natif avec texte sélectionnable confirmé
+- **Outils testés** : pdftotext (poppler) installé et fonctionnel
+- **Statut** : Extraction technique à debugger
 
-- **Next.js 15** - Framework React avec App Router
-- **Tailwind CSS** - Framework CSS utilitaire
-- **Anthropic Claude SDK** - API d'intelligence artificielle
-- **Formidable** - Gestion d'upload de fichiers
-- **Lucide React** - Icônes modernes
+### 🚀 **Prochaines Étapes Prioritaires**
 
-## 📋 Prérequis
+#### 1. **Résoudre l'extraction PDF** (Critique)
+```bash
+# Options à tester :
+# Option A: Tester pdftotext manuellement
+pdftotext -layout "votre-pv.pdf" output.txt
 
-- Node.js 18+ 
-- Compte Anthropic avec clé API
-- Navigateur moderne
+# Option B: Alternative avec pdf2json
+npm install pdf2json
+
+# Option C: OCR automatique si nécessaire  
+brew install tesseract
+npm install node-tesseract-ocr
+```
+
+#### 2. **Une fois l'extraction fonctionnelle**
+- Étendre l'analyse Claude au document complet (pas que 2000 chars)
+- Implémenter extraction complète : budget, travaux, litiges
+- Ajouter export des résultats (JSON, PDF)
+- Historique des analyses
+
+#### 3. **Améliorations futures**
+- Support multi-formats (Word, images)
+- Interface de gestion (plusieurs PV)
+- API REST publique
+
+### 🛠️ **Démarrage Rapide pour Reprendre**
+
+1. **Vérifier l'environnement**
+   ```bash
+   cd /Users/garance/Desktop/hoa-analyzer
+   ls .env.local  # Doit exister avec ANTHROPIC_API_KEY
+   ```
+
+2. **Lancer le serveur**
+   ```bash
+   npm run dev
+   # Ouvre http://localhost:3000
+   ```
+
+3. **Tester l'état actuel**
+   - Upload PDF → Cliquez "Analyser le PV (Extraction réelle)"
+   - Regarder les logs terminal pour diagnostic
+
+4. **Debug extraction PDF**
+   ```bash
+   # Test manuel pdftotext
+   pdftotext -v  # Vérifier installation
+   pdftotext "votre-pv.pdf" test-output.txt
+   cat test-output.txt  # Voir si extraction fonctionne
+   ```
+
+---
+
+## ✨ Fonctionnalités
+
+- 📄 **Upload de PDF** : Glissez-déposez vos PV de copropriété
+- 🤖 **Analyse IA** : Extraction automatique via Claude d'Anthropic
+- 📊 **Données structurées** : Budget, travaux, litiges clairement organisés
+- 🎨 **Interface moderne** : Design responsive avec Tailwind CSS
+
+## 🔍 Informations extraites
+
+- **💰 Budget annuel** : Charges prévisionnelles et fonds de travaux
+- **🔨 Gros travaux** : Rénovations importantes avec montants
+- **🔧 Petits travaux** : Entretien courant et réparations
+- **⚖️ Litiges** : Contentieux et impayés
 
 ## 🚀 Installation
 
-1. Cloner le repository :
-```bash
-git clone [URL_DU_REPO]
+### 1. Clonez le projet
+\`\`\`bash
+git clone [votre-repo]
 cd hoa-analyzer
-```
+\`\`\`
 
-2. Installer les dépendances :
-```bash
+### 2. Installez les dépendances
+\`\`\`bash
 npm install
-```
+\`\`\`
 
-3. Configurer les variables d'environnement :
-```bash
-cp .env.example .env.local
-# Ajouter votre clé API Anthropic dans .env.local
-```
+### 3. Configuration de l'API Anthropic
 
-4. Lancer le serveur de développement :
-```bash
+1. Créez un compte sur [console.anthropic.com](https://console.anthropic.com)
+2. Générez une clé API
+3. Créez le fichier \`.env.local\` à la racine :
+
+\`\`\`bash
+ANTHROPIC_API_KEY=votre_clé_api_ici
+NEXT_PUBLIC_APP_NAME=HOA Analyzer
+\`\`\`
+
+### 4. Installez pdftotext (extraction PDF)
+\`\`\`bash
+# macOS
+brew install poppler
+
+# Vérification
+pdftotext -v
+\`\`\`
+
+### 5. Lancez l'application
+\`\`\`bash
 npm run dev
-```
+\`\`\`
 
 L'application sera accessible sur [http://localhost:3000](http://localhost:3000)
 
-## ⚙️ Configuration
+## 🛠️ Technologies utilisées
 
-### Variables d'environnement
+- **Next.js 15** - Framework React
+- **React 19** - Interface utilisateur
+- **Tailwind CSS** - Styles et design
+- **Anthropic Claude SDK** - Analyse IA des documents ✅
+- **poppler (pdftotext)** - Extraction de texte PDF
+- **Lucide React** - Icônes modernes
 
-Créez un fichier `.env.local` à la racine avec :
+## 📋 Structure du projet
 
-```
-ANTHROPIC_API_KEY=your_api_key_here
-NEXT_PUBLIC_APP_NAME=HOA Analyzer
-```
-
-### Obtenir une clé API Anthropic
-
-1. Aller sur [console.anthropic.com](https://console.anthropic.com/)
-2. Se connecter avec votre compte Claude
-3. Créer une nouvelle clé API
-4. L'ajouter dans `.env.local`
-
-## 📁 Structure du projet
-
-```
+\`\`\`
 hoa-analyzer/
 ├── app/
 │   ├── api/
 │   │   └── analyze-pdf/
-│   │       └── route.js          # API endpoint pour l'analyse PDF
-│   ├── components/
-│   │   └── PDFAnalyzer.js         # Composant principal
-│   ├── globals.css                # Styles globaux
-│   ├── layout.js                  # Layout principal
-│   └── page.js                    # Page d'accueil
-├── public/                        # Assets statiques
-├── .env.local                     # Variables d'environnement (à créer)
-├── .env.example                   # Exemple de configuration
-├── package.json                   # Dépendances et scripts
-└── README.md                      # Documentation
-```
+│   │       └── route.js      # API d'analyse PDF + Claude SDK
+│   ├── globals.css           # Styles globaux
+│   ├── layout.js            # Layout principal
+│   └── page.js              # Page d'accueil
+├── public/                  # Ressources statiques
+├── .env.local              # Variables d'environnement (à créer)
+└── package.json            # Dépendances
+\`\`\`
 
-## 🎛 Utilisation
+## 🎯 Utilisation
 
-1. **Upload d'un PDF** : Glissez-déposez ou sélectionnez un PV de copropriété
-2. **Analyse** : Cliquez sur "Analyser le document"
-3. **Résultats** : Consultez les données extraites structurées
-4. **Export** : Téléchargez les résultats en JSON
+1. **Ouvrez l'application** dans votre navigateur
+2. **Glissez votre PDF** dans la zone de téléchargement
+3. **Cliquez sur "Analyser le PV"**
+4. **Consultez les résultats** organisés par catégorie
 
-## 📊 Format des données extraites
+## 🔒 Sécurité
 
-```json
-{
-  "budget_annuel": {
-    "numero_clause": "6",
-    "objet_vote": "Fixation du budget prévisionnel",
-    "montant": "105 000,00 €",
-    "resultat": "Approuvé"
-  },
-  "gros_travaux": [
-    {
-      "numero_clause": "10",
-      "objet_vote": "Reprise maçonnerie façade",
-      "budget": "4 909,85 € TTC",
-      "resultat": "Approuvé"
-    }
-  ],
-  "petits_travaux": [...],
-  "litiges": [...]
-}
-```
-
-## 🔧 Développement
-
-### Scripts disponibles
-
-- `npm run dev` - Serveur de développement
-- `npm run build` - Build de production  
-- `npm run start` - Serveur de production
-- `npm run lint` - Vérification du code
-
-### Ajout de nouvelles fonctionnalités
-
-1. Modifier le prompt d'extraction dans `app/api/analyze-pdf/route.js`
-2. Adapter l'interface dans `app/components/PDFAnalyzer.js`
-3. Tester avec différents types de PV
+- Les fichiers PDF sont traités temporairement et automatiquement supprimés
+- La clé API Anthropic est sécurisée dans les variables d'environnement
+- Limite de taille de fichier : 10MB
 
 ## 🐛 Dépannage
 
-### Erreurs courantes
+### L'analyse ne fonctionne pas
+- Vérifiez que votre clé API Anthropic est correctement configurée
+- Assurez-vous que pdftotext est installé : `pdftotext -v`
+- Testez l'extraction manuelle : `pdftotext "votre-pv.pdf" test.txt`
 
-- **"API key not found"** : Vérifiez le fichier `.env.local`
-- **"Failed to parse PDF"** : Assurez-vous que le PDF est lisible (pas un scan image)
-- **Timeout** : Les gros PDF peuvent prendre du temps à analyser
+### Erreur de téléchargement
+- Vérifiez que le fichier est bien au format PDF
+- Respectez la limite de 10MB
 
-### Logs de debug
+## 🤝 Contribution
 
-Les erreurs détaillées sont visibles dans :
-- Console navigateur (F12)
-- Terminal Next.js pour les erreurs serveur
+1. Forkez le projet
+2. Créez une branche feature (\`git checkout -b feature/amelioration\`)
+3. Committez vos changements (\`git commit -m 'Ajouter fonctionnalité'\`)
+4. Poussez vers la branche (\`git push origin feature/amelioration\`)
+5. Ouvrez une Pull Request
 
-## 🚀 Déploiement
+## 📄 Licence
 
-Compatible avec Vercel, Netlify ou toute plateforme supportant Next.js.
+Ce projet est sous licence MIT. Voir le fichier \`LICENSE\` pour plus de détails.
 
-N'oubliez pas d'ajouter vos variables d'environnement sur la plateforme de déploiement !
+## 🌟 Améliorations futures
 
-## 📜 Licence
-
-MIT
-
-## 👥 Contribution
-
-Les contributions sont bienvenues ! Merci d'ouvrir une issue avant de proposer des changements majeurs.
+- [ ] **Résoudre extraction PDF** (priorité #1)
+- [ ] Support d'autres formats de documents
+- [ ] Historique des analyses
+- [ ] Export des résultats (PDF, Excel)
+- [ ] Analyse multi-langues
+- [ ] API REST publique
 
 ---
 
-**Note** : Cette application est optimisée pour les PV de copropriété français. Les performances peuvent varier selon le format et la qualité des documents.
+**Développé avec ❤️ pour simplifier la gestion des copropriétés françaises**
+
+### 📝 Notes de développement
+- **SDK Claude** : ✅ Déjà intégré avec @anthropic-ai/sdk
+- **État actuel** : Interface fonctionnelle, extraction PDF à debugger
+- **Dernière session** : Janvier 2025 - Problème extraction pdftotext
