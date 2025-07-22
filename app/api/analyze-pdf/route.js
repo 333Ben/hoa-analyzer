@@ -1,90 +1,12 @@
 import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import fs from 'fs';
-import path from 'path';
-
-const execAsync = promisify(exec);
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// Fonction pour extraire le texte du PDF avec pdftotext
-async function extractPDFText(buffer, fileName) {
-  try {
-    console.log(`📄 Début extraction PDF avec pdftotext...`);
-    
-    // Créer des noms de fichiers temporaires corrects
-    const tempDir = '/tmp';
-    const timestamp = Date.now();
-    const cleanFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_'); // Nettoyer le nom
-    const tempPdfPath = path.join(tempDir, `temp-${timestamp}-${cleanFileName}`);
-    const tempTxtPath = path.join(tempDir, `temp-${timestamp}-output.txt`);
-    
-    console.log(`📁 Fichier PDF temporaire: ${tempPdfPath}`);
-    console.log(`📁 Fichier TXT temporaire: ${tempTxtPath}`);
-    
-    // Écrire le buffer vers le fichier temporaire
-    await fs.promises.writeFile(tempPdfPath, buffer);
-    console.log(`✅ Fichier temporaire créé: ${tempPdfPath}`);
-    
-    try {
-      // Utiliser pdftotext pour extraire le texte
-      const command = `pdftotext "${tempPdfPath}" "${tempTxtPath}"`;
-      console.log(`🔄 Exécution: ${command}`);
-      
-      await execAsync(command);
-      console.log(`✅ pdftotext exécuté avec succès`);
-      
-      // Vérifier que le fichier texte existe
-      if (!fs.existsSync(tempTxtPath)) {
-        throw new Error('Le fichier de sortie n\'a pas été créé par pdftotext');
-      }
-      
-      // Lire le fichier texte généré
-      const extractedText = await fs.promises.readFile(tempTxtPath, 'utf8');
-      console.log(`✅ Texte extrait: ${extractedText.length} caractères`);
-      
-      // Vérifier si le PDF est vide ou scanné
-      if (extractedText.trim().length === 0) {
-        console.warn('⚠️ PDF vide ou scanné détecté');
-        return "PDF_SCANNED_OR_EMPTY";
-      }
-      
-      return extractedText;
-      
-    } finally {
-      // Nettoyer les fichiers temporaires
-      try {
-        if (fs.existsSync(tempPdfPath)) {
-          await fs.promises.unlink(tempPdfPath);
-          console.log(`🧹 PDF temporaire supprimé`);
-        }
-        if (fs.existsSync(tempTxtPath)) {
-          await fs.promises.unlink(tempTxtPath);
-          console.log(`🧹 TXT temporaire supprimé`);
-        }
-      } catch (cleanupError) {
-        console.warn('⚠️ Erreur nettoyage:', cleanupError.message);
-      }
-    }
-    
-  } catch (error) {
-    console.error('💥 Erreur extraction PDF:', error);
-    throw new Error(`Erreur lors de l'extraction PDF: ${error.message}`);
-  }
-}
-
-// Fonction pour limiter le texte (simule première page)
-function extractFirstPageText(fullText, maxChars = 2000) {
-  console.log(`📄 Limitation du texte: ${fullText.length} -> ${Math.min(fullText.length, maxChars)} caractères`);
-  return fullText.substring(0, maxChars);
-}
-
 export async function POST(request) {
-  console.log('\n=== 🚀 DEBUT ANALYSE PDF AVEC PDFTOTEXT ===');
+  console.log('\n=== 🚀 DEBUT ANALYSE PDF NATIVE CLAUDE ===');
   
   try {
     // 1. Vérifier la clé API
@@ -138,7 +60,20 @@ export async function POST(request) {
     console.log(`   - Taille: ${file.size} bytes`);
     console.log(`   - Type: ${file.type}`);
 
-    // 3. Convertir le fichier en buffer
+    // Vérifier la taille du fichier (limite Claude ~20MB)
+    if (file.size > 20 * 1024 * 1024) {
+      console.error('❌ ERREUR: Fichier trop volumineux');
+      return NextResponse.json(
+        { 
+          error: 'Fichier trop volumineux',
+          details: `Taille: ${(file.size / 1024 / 1024).toFixed(2)}MB. Limite: 20MB`,
+          help: 'Compressez votre PDF ou utilisez seulement les premières pages'
+        },
+        { status: 400 }
+      );
+    }
+
+    // 3. Convertir le fichier en buffer puis base64
     console.log('🔄 Conversion du fichier en buffer...');
     
     let buffer;
@@ -153,105 +88,140 @@ export async function POST(request) {
       );
     }
 
-    // 4. Extraire le texte du PDF avec pdftotext
-    console.log('🔍 === DEBUT EXTRACTION PDFTOTEXT ===');
+    // 4. Convertir en base64
+    console.log('📊 Conversion en base64...');
+    const pdfBase64 = buffer.toString('base64');
+    console.log(`✅ Base64 créé: ${pdfBase64.length} caractères`);
+
+    // 5. Préparer l'analyse Claude avec document natif
+    console.log('🤖 === PREPARATION ANALYSE CLAUDE NATIVE ===');
     
-    let pdfText;
-    try {
-      const fullText = await extractPDFText(buffer, file.name);
-      
-      // Vérifier si c'est un PDF scanné
-      if (fullText === "PDF_SCANNED_OR_EMPTY") {
-        console.warn('📷 PDF scanné ou vide détecté');
-        return NextResponse.json(
-          { 
-            error: 'PDF scanné ou vide',
-            details: 'Ce PDF semble être un scan d\'image ou ne contient pas de texte extractible',
-            help: 'Essayez avec un PDF contenant du texte sélectionnable, ou utilisez un outil OCR',
-            suggestion: 'Vous pouvez convertir votre PDF scanné en texte avec des outils comme Adobe Acrobat ou des services OCR en ligne'
-          },
-          { status: 400 }
-        );
-      }
-      
-      // Limiter à ~2000 caractères pour simuler une première page
-      pdfText = extractFirstPageText(fullText, 2000);
-      console.log(`✅ Extraction réussie:`);
-      console.log(`   - Caractères extraits: ${pdfText.length}`);
-      console.log(`   - Aperçu: "${pdfText.substring(0, 150)}..."`);
-    } catch (err) {
-      console.error('❌ ERREUR extraction PDF:', err);
-      return NextResponse.json(
-        { 
-          error: 'Erreur extraction PDF',
-          details: err.message,
-          help: 'Le PDF peut être corrompu, protégé par mot de passe, ou contenir uniquement des images'
-        },
-        { status: 400 }
-      );
-    }
+    const prompt = `Tu es un expert en analyse de procès-verbaux de copropriété français. Analyse ce document PDF et extrais les informations suivantes au format JSON :
 
-    // 5. Préparer l'analyse Claude
-    console.log('🤖 === PREPARATION ANALYSE CLAUDE ===');
-    
-    const prompt = `Tu es un expert en analyse de documents. Analyse le texte suivant et réponds UNIQUEMENT à cette question :
+{
+  "titre": "Titre complet du document",
+  "budget": "Budget annuel ou charges prévisionnelles avec montants exacts",
+  "grosTravaux": "Gros travaux planifiés ou votés avec détails et montants",
+  "petitsTravaux": "Petits travaux d'entretien avec détails et montants", 
+  "litiges": "Contentieux, impayés ou conflits mentionnés"
+}
 
-QUESTION : Quel est le titre du document ?
+INSTRUCTIONS DÉTAILLÉES :
+- Pour chaque champ, fournis des informations précises et complètes
+- Inclus les montants exacts quand disponibles
+- Si une information n'est pas trouvée, écris "Non trouvé" 
+- Pour les montants, utilise le format "X€" ou "X euros"
+- Sois précis sur les dates et échéances
+- Résume clairement les décisions importantes
 
-TEXTE À ANALYSER (première partie du document) :
-${pdfText}
-
-INSTRUCTIONS :
-- Identifie le titre principal du document
-- Si c'est un PV, donne le titre complet (ex: "PROCÈS-VERBAL D'ASSEMBLÉE GÉNÉRALE DE COPROPRIÉTÉ")  
-- Réponds seulement avec le titre, sans autre texte
-- Si tu ne trouves pas de titre clair, réponds "Titre non identifié"`;
+Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
 
     console.log(`📝 Prompt préparé (${prompt.length} caractères)`);
 
-    // 6. Envoyer à Claude
-    console.log('📡 Envoi à Claude...');
+    // 6. Envoyer le PDF directement à Claude
+    console.log('📡 Envoi du PDF à Claude (support natif)...');
     
     let response;
     try {
       response = await anthropic.messages.create({
-        model: "claude-3-haiku-20240307",
-        max_tokens: 200,
+        model: "claude-3-5-sonnet-20241022", // Modèle Claude 3.5 Sonnet stable
+        max_tokens: 4000, // Plus de tokens pour une analyse complète
         messages: [{
           role: "user",
-          content: prompt
+          content: [
+            {
+              type: "text",
+              text: prompt
+            },
+            {
+              type: "document",
+              source: {
+                type: "base64",
+                media_type: "application/pdf",
+                data: pdfBase64
+              }
+            }
+          ]
         }]
       });
       console.log('✅ Réponse reçue de Claude');
     } catch (err) {
       console.error('❌ ERREUR Claude:', err);
+      
+      // Gestion spécifique des erreurs Claude
+      let errorMessage = err.message;
+      let helpMessage = 'Vérifiez votre clé API et votre crédit Anthropic';
+      
+      if (err.message.includes('content_policy')) {
+        errorMessage = 'Document refusé par la politique de contenu';
+        helpMessage = 'Le PDF peut contenir du contenu non autorisé ou être corrompu';
+      } else if (err.message.includes('overloaded')) {
+        errorMessage = 'Service Claude temporairement surchargé';
+        helpMessage = 'Réessayez dans quelques minutes';
+      } else if (err.message.includes('context_length')) {
+        errorMessage = 'Document trop long pour être analysé';
+        helpMessage = 'Réduisez la taille du PDF ou utilisez moins de pages';
+      }
+      
       return NextResponse.json(
         { 
           error: 'Erreur API Claude',
-          details: err.message,
-          help: 'Vérifiez votre clé API et votre crédit Anthropic'
+          details: errorMessage,
+          help: helpMessage,
+          type: err.constructor.name
         },
         { status: 500 }
       );
     }
 
-    // 7. Traiter la réponse
-    const titre = response.content[0].text.trim();
-    console.log('🎯 TITRE IDENTIFIÉ:', titre);
+    // 7. Traiter la réponse JSON
+    console.log('🎯 Traitement de la réponse Claude...');
+    const rawResponse = response.content[0].text.trim();
+    console.log('📄 Réponse brute:', rawResponse.substring(0, 200) + '...');
 
-    const analysisResults = {
-      titre: titre,
-      budget: "Extraction PDF réelle - première page analysée",
-      grosTravaux: "Extraction PDF réelle - première page analysée", 
-      petitsTravaux: "Extraction PDF réelle - première page analysée",
-      litiges: "Extraction PDF réelle - première page analysée",
-      info: `Analyse avec pdftotext - ${pdfText.length} caractères des premiers 2000`,
-      fileName: file.name,
-      fileSize: file.size,
-      extractionMethod: "pdftotext"
-    };
+    let analysisResults;
+    try {
+      // Parser la réponse JSON de Claude
+      analysisResults = JSON.parse(rawResponse);
+      console.log('✅ JSON parsé avec succès');
+      
+      // Ajouter des métadonnées
+      analysisResults.info = `Analyse native Claude PDF - ${file.size} bytes`;
+      analysisResults.fileName = file.name;
+      analysisResults.fileSize = file.size;
+      analysisResults.extractionMethod = "claude-native-pdf";
+      analysisResults.model = "claude-3-5-sonnet-20241022";
+      
+    } catch (jsonErr) {
+      console.warn('⚠️ Erreur parsing JSON, utilisation du texte brut');
+      
+      // Si le JSON parsing échoue, créer une structure de base
+      analysisResults = {
+        titre: "Analyse réussie mais format de réponse inattendu",
+        budget: rawResponse.includes('budget') || rawResponse.includes('euros') ? 
+          `Informations détectées - voir réponse complète` : "Non trouvé",
+        grosTravaux: rawResponse.includes('travaux') ? 
+          `Informations détectées - voir réponse complète` : "Non trouvé", 
+        petitsTravaux: rawResponse.includes('entretien') || rawResponse.includes('réparation') ?
+          `Informations détectées - voir réponse complète` : "Non trouvé",
+        litiges: rawResponse.includes('litige') || rawResponse.includes('contentieux') ?
+          `Informations détectées - voir réponse complète` : "Non trouvé",
+        rawResponse: rawResponse, // Inclure la réponse brute pour debug
+        info: `Analyse native Claude PDF - ${file.size} bytes - Format JSON inattendu`,
+        fileName: file.name,
+        fileSize: file.size,
+        extractionMethod: "claude-native-pdf",
+        model: "claude-3-5-sonnet-20241022"
+      };
+    }
 
-    console.log('🎉 === ANALYSE PDF TERMINÉE AVEC SUCCÈS ===\n');
+    console.log('🎉 === ANALYSE PDF CLAUDE NATIVE TERMINÉE AVEC SUCCÈS ===\n');
+    console.log('📊 Résultats:', {
+      titre: analysisResults.titre?.substring(0, 50) + '...',
+      budget: analysisResults.budget?.substring(0, 50) + '...',
+      method: analysisResults.extractionMethod
+    });
+
     return NextResponse.json(analysisResults);
 
   } catch (error) {
@@ -265,7 +235,8 @@ INSTRUCTIONS :
       { 
         error: 'Erreur système',
         details: error.message,
-        type: error.constructor.name
+        type: error.constructor.name,
+        help: 'Consultez les logs du serveur pour plus de détails'
       },
       { status: 500 }
     );

@@ -108,8 +108,8 @@ export default function Home() {
             Analysez automatiquement vos PV de copropriété et extrayez les informations clés : 
             budget, travaux et litiges
           </p>
-          <div className="mt-4 px-4 py-2 bg-green-100 border border-green-400 rounded-lg text-green-800">
-            <strong>✅ Extraction PDF Réelle :</strong> Utilise pdftotext pour analyser votre document (~2000 premiers caractères)
+          <div className="mt-4 px-4 py-2 bg-blue-100 border border-blue-400 rounded-lg text-blue-800">
+            <strong>🚀 Analyse PDF Native Claude :</strong> Envoi direct du PDF à l'IA Claude pour analyse complète du document
           </div>
         </div>
 
@@ -217,7 +217,7 @@ export default function Home() {
                 ) : (
                   <div className="flex items-center">
                     <Search className="h-5 w-5 mr-2" />
-                    Analyser le PV (Extraction réelle)
+                    Analyser le PV (Analyse Native)
                   </div>
                 )}
               </button>
