@@ -1,6 +1,16 @@
 import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { PDFDocument } from 'pdf-lib';
+import { TextractClient, AnalyzeDocumentCommand } from '@aws-sdk/client-textract';
+
+// Configuration AWS Textract
+const textractClient = new TextractClient({
+  region: process.env.AWS_REGION || 'eu-west-1',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+});
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -119,6 +129,56 @@ Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
 
     console.log(`📝 Prompt préparé (${prompt.length} caractères)`);
 
+    // 4.5. Fonctions AWS Textract pour OCR
+    async function processWithTextract(buffer) {
+      console.log('🔄 === FALLBACK AWS TEXTRACT - OCR ===');
+      try {
+        console.log('📷 Début OCR avec AWS Textract...');
+        
+        const command = new AnalyzeDocumentCommand({
+          Document: { Bytes: buffer },
+          FeatureTypes: ['TABLES'] // Texte + Tables, ignorer images
+        });
+        
+        console.log('☁️ Envoi vers AWS Textract...');
+        const result = await textractClient.send(command);
+        
+        console.log(`📊 AWS Textract response: ${result.Blocks.length} blocks détectés`);
+        const extractedText = extractTextFromTextract(result);
+        
+        console.log('✅ OCR AWS Textract terminé avec succès');
+        console.log(`📝 Texte OCR extrait: ${extractedText.length} caractères`);
+        console.log('🔤 Premiers caractères OCR:', extractedText.substring(0, 100));
+        
+        return extractedText;
+      } catch (textractErr) {
+        console.error('❌ Erreur AWS Textract:', textractErr);
+        throw new Error(`Échec OCR AWS Textract: ${textractErr.message}`);
+      }
+    }
+    
+    function extractTextFromTextract(textractResult) {
+      console.log('📋 Extraction du texte depuis AWS Textract...');
+      
+      // Filtrer pour ne garder que TEXT et TABLES (ignorer images)
+      const textBlocks = textractResult.Blocks.filter(block => 
+        block.BlockType === 'LINE' || block.BlockType === 'CELL'
+      );
+      
+      // Extraire le texte de chaque block
+      const textLines = textBlocks
+        .filter(block => block.Text && block.Text.trim())
+        .map(block => block.Text.trim())
+        .filter(text => text.length > 0);
+      
+      console.log(`📄 ${textLines.length} lignes de texte extraites`);
+      
+      // Joindre toutes les lignes avec espaces
+      const fullText = textLines.join(' ').replace(/\s+/g, ' ').trim();
+      
+      return fullText;
+    }
+
     // 4.6. Fonction helper pour parser PDF en texte (inspirée de hoa-pdf2text)
     async function parsePdfToText(buffer) {
       console.log('📄 === PARSING PDF VERS TEXTE ===');
@@ -143,8 +203,11 @@ Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
         console.log(`✅ PDF parsé: ${cleanText.length} caractères`);
         return cleanText;
       } catch (parseErr) {
-        console.error('❌ Erreur parsing PDF:', parseErr);
-        throw parseErr;
+        console.error('❌ pdf-parse échoué:', parseErr.message);
+        console.log('🔄 Passage au fallback AWS Textract (PDF scanné détecté)');
+        
+        // Fallback automatique vers AWS Textract
+        return await processWithTextract(buffer);
       }
     }
 
