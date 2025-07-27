@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { PDFDocument } from 'pdf-lib';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -93,7 +94,7 @@ export async function POST(request) {
     const pdfBase64 = buffer.toString('base64');
     console.log(`✅ Base64 créé: ${pdfBase64.length} caractères`);
 
-    // 5. Préparer l'analyse Claude avec document natif
+    // 4.5. Préparer le prompt global
     console.log('🤖 === PREPARATION ANALYSE CLAUDE NATIVE ===');
     
     const prompt = `Tu es un expert en analyse de procès-verbaux de copropriété français. Analyse ce document PDF et extrais les informations suivantes au format JSON :
@@ -118,60 +119,170 @@ Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
 
     console.log(`📝 Prompt préparé (${prompt.length} caractères)`);
 
-    // 6. Envoyer le PDF directement à Claude
-    console.log('📡 Envoi du PDF à Claude (support natif)...');
-    
-    let response;
-    try {
-      response = await anthropic.messages.create({
-        model: "claude-3-5-sonnet-20241022", // Modèle Claude 3.5 Sonnet stable
-        max_tokens: 4000, // Plus de tokens pour une analyse complète
+    // 4.6. Fonction helper pour parser PDF en texte (inspirée de hoa-pdf2text)
+    async function parsePdfToText(buffer) {
+      console.log('📄 === PARSING PDF VERS TEXTE ===');
+      try {
+        console.log('🔍 Début de l\'analyse PDF...');
+        
+        // Import dynamique de pdf-parse pour éviter les erreurs au démarrage
+        const pdfParse = (await import('pdf-parse')).default;
+        
+        const data = await pdfParse(buffer);
+        const text = data.text;
+        console.log('✅ PDF analysé avec succès');
+        console.log('📝 Texte extrait (longueur):', text.length);
+        console.log('�� Nombre de pages:', data.numpages);
+        console.log('🔤 Premiers caractères du texte:', text.substring(0, 100));
+        
+        // Nettoyer et formater le texte
+        const cleanText = text
+          .replace(/\s+/g, ' ')  // Normaliser les espaces
+          .trim();
+        
+        console.log(`✅ PDF parsé: ${cleanText.length} caractères`);
+        return cleanText;
+      } catch (parseErr) {
+        console.error('❌ Erreur parsing PDF:', parseErr);
+        throw parseErr;
+      }
+    }
+
+    // 4.6. Analyser avec Claude (texte uniquement)
+    async function analyzeWithText(text, method = 'text-fallback') {
+      console.log(`🤖 === ANALYSE CLAUDE TEXTE (${method}) ===`);
+      const textPrompt = `Tu es un expert en analyse de procès-verbaux de copropriété français. Analyse ce document PDF et extrais les informations suivantes au format JSON :
+
+{
+  "titre": "Titre complet du document",
+  "budget": "Budget annuel ou charges prévisionnelles avec montants exacts",
+  "grosTravaux": "Gros travaux planifiés ou votés avec détails et montants",
+  "petitsTravaux": "Petits travaux d'entretien avec détails et montants", 
+  "litiges": "Contentieux, impayés ou conflits mentionnés"
+}
+
+INSTRUCTIONS DÉTAILLÉES :
+- Pour chaque champ, fournis des informations précises et complètes
+- Inclus les montants exacts quand disponibles
+- Si une information n'est pas trouvée, écris "Non trouvé" 
+- Pour les montants, utilise le format "X€" ou "X euros"
+- Sois précis sur les dates et échéances
+- Résume clairement les décisions importantes
+
+Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.
+
+TEXTE DU DOCUMENT:
+${text}`;
+      
+      const response = await anthropic.messages.create({
+        model: "claude-3-5-sonnet-20241022",
+        max_tokens: 4000,
         messages: [{
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: prompt
-            },
-            {
-              type: "document",
-              source: {
-                type: "base64",
-                media_type: "application/pdf",
-                data: pdfBase64
-              }
-            }
-          ]
+          role: "user", 
+          content: textPrompt
         }]
       });
-      console.log('✅ Réponse reçue de Claude');
-    } catch (err) {
-      console.error('❌ ERREUR Claude:', err);
       
-      // Gestion spécifique des erreurs Claude
-      let errorMessage = err.message;
-      let helpMessage = 'Vérifiez votre clé API et votre crédit Anthropic';
-      
-      if (err.message.includes('content_policy')) {
-        errorMessage = 'Document refusé par la politique de contenu';
-        helpMessage = 'Le PDF peut contenir du contenu non autorisé ou être corrompu';
-      } else if (err.message.includes('overloaded')) {
-        errorMessage = 'Service Claude temporairement surchargé';
-        helpMessage = 'Réessayez dans quelques minutes';
-      } else if (err.message.includes('context_length')) {
-        errorMessage = 'Document trop long pour être analysé';
-        helpMessage = 'Réduisez la taille du PDF ou utilisez moins de pages';
+      return { response, method };
+    }
+
+    // 4.7. Stratégie d'analyse intelligente
+    console.log('🎯 === STRATÉGIE D\'ANALYSE INTELLIGENTE ===');
+    const fileSizeKB = Math.round(file.size / 1024);
+    console.log(`📏 Taille fichier: ${fileSizeKB} KB`);
+    
+    let response;
+    let analysisMethod = 'claude-native-pdf';
+    
+    if (fileSizeKB > 500) {
+      console.log('🔀 Stratégie: FORCER MODE TEXTE');
+      console.log('📄 Fichier > 500KB : parsing texte direct...');
+      try {
+        const pdfText = await parsePdfToText(buffer);
+        const result = await analyzeWithText(pdfText, 'large-file-text');
+        response = result.response;
+        analysisMethod = result.method;
+        console.log('✅ Analyse texte réussie !');
+      } catch (textErr) {
+        console.error('❌ ÉCHEC analyse texte forcée:', textErr);
+        return NextResponse.json(
+          { 
+            error: 'Erreur analyse texte',
+            details: textErr.message,
+            help: 'Le fichier est trop volumineux et l\'extraction de texte a échoué',
+            fileSize: fileSizeKB
+          },
+          { status: 500 }
+        );
       }
-      
-      return NextResponse.json(
-        { 
-          error: 'Erreur API Claude',
-          details: errorMessage,
-          help: helpMessage,
-          type: err.constructor.name
-        },
-        { status: 500 }
-      );
+    } else {
+      console.log('🔀 Stratégie: ESSAYER PDF NATIF D\'ABORD');
+      console.log('📡 Essai PDF natif d\'abord...');
+      try {
+        response = await anthropic.messages.create({
+          model: "claude-3-5-sonnet-20241022", // Modèle Claude 3.5 Sonnet stable
+          max_tokens: 4000, // Plus de tokens pour une analyse complète
+          messages: [{
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: prompt
+              },
+              {
+                type: "document",
+                source: {
+                  type: "base64",
+                  media_type: "application/pdf",
+                  data: pdfBase64
+                }
+              }
+            ]
+          }]
+        });
+        console.log('✅ PDF natif réussi');
+        analysisMethod = 'claude-native-pdf';
+        
+      } catch (err) {
+        console.log('⚠️ PDF natif échoué, tentative parsing texte...');
+        console.error('💡 Erreur PDF natif:', err.message);
+        
+        // Fallback : parser en texte si erreur 529 ou autre
+        if (err.message.includes('overloaded') || err.status === 529) {
+          console.log('🔄 FALLBACK: Parsing PDF vers texte...');
+          try {
+            const pdfText = await parsePdfToText(buffer);
+            const result = await analyzeWithText(pdfText, 'overload-fallback');
+            response = result.response;
+            analysisMethod = result.method;
+            console.log('✅ Fallback texte réussi !');
+          } catch (fallbackErr) {
+            console.error('❌ ÉCHEC total (PDF + Texte):', fallbackErr);
+            return NextResponse.json(
+              { 
+                error: 'Erreur complète d\'analyse',
+                details: `PDF natif: ${err.message}. Texte: ${fallbackErr.message}`,
+                help: 'Ni l\'analyse PDF ni le parsing texte n\'ont fonctionné',
+                fileSize: fileSizeKB
+              },
+              { status: 500 }
+            );
+          }
+        } else {
+          // Autre erreur que surcharge : pas de fallback
+          console.error('❌ Erreur PDF non-récupérable:', err);
+          return NextResponse.json(
+            { 
+              error: 'Erreur API Claude',
+              details: err.message,
+              help: 'Erreur non liée à la surcharge, pas de fallback possible',
+              fileSize: fileSizeKB,
+              type: err.constructor.name
+            },
+            { status: 500 }
+          );
+        }
+      }
     }
 
     // 7. Traiter la réponse JSON
